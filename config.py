@@ -3,6 +3,29 @@
 """
 import os
 import discord
+from pathlib import Path
+
+
+def load_env(path=".env"):
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+
+    with env_path.open("r", encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and value:
+                os.environ.setdefault(key, value)
+
+
+load_env()
 
 # ⚠️ ВСТАВЬ СЮДА ID СВОЕГО ТЕКСТОВОГО КАНАЛА ДЛЯ СТАТУСА
 CHANNEL_ID = 825044962213911
@@ -46,7 +69,9 @@ COOLDOWN_SECONDS = 45
 # Роль для отпуска
 VACATION_ROLE_NAME = "Отпуск"
 
-# Настройки MongoDB — используем локальный сервер, если env не задан
+# Настройки токена бота и MongoDB — используем локальные значения, если env не задан
+TOKEN = os.environ.get("DISCORD_TOKEN")
+
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB = os.environ.get("MONGO_DB", "discord_bot")
 MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION", "user_limits")
