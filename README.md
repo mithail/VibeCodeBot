@@ -23,7 +23,7 @@ Discord бот для автоматического управления рол
 ### 1. Клонируй репозиторий
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/discord-bot.git
+git clone https://github.com/mithail/VibeCodeBot
 cd discord-bot
 ```
 
