@@ -1,4 +1,5 @@
 import os
+import asyncio
 import discord
 from datetime import timedelta
 from discord.ext import commands
@@ -7,6 +8,8 @@ from views import RoleManagementView, AcceptUserModal, RemoveUserModal, Vacation
 from embeds import build_role_panel_embed, get_department_config
 from database import use_limit, get_user_limit
 from config import ALLOWED_ROLE_ID, DEPARTMENTS, MAX_LIMIT, COOLDOWN_SECONDS, MONGO_URI, MONGO_DB, MONGO_COLLECTION, TOKEN
+from ai_analyzer import MessageAnalyzer, client as openai_client, is_message_relevant
+from github_monitor import GitHubMonitor
 
 # ==========================================
 # 1. НАСТРОЙКА БОТА И ИНТЕНТОВ
@@ -51,6 +54,9 @@ class MyBot(commands.Bot):
 
 bot = MyBot()
 
+# Инициализируем GitHub монитор
+github_monitor = GitHubMonitor()
+
 try:
     mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     # Проверяем подключение
@@ -68,9 +74,111 @@ except Exception as e:
 
 
 # ==========================================
-# СЛЭШ-КОМАНДА /PANEL С ПРОВЕРКОЙ РОЛИ
+# 2. ОБРАБОТЧИК СООБЩЕНИЙ ДЛЯ AI АНАЛИЗА
 # ==========================================
-@bot.tree.command(name="panel", description="Открыть панель управления ролями отдела")
+@bot.event
+async def on_message(message: discord.Message):
+    """
+    Обработчик сообщений:
+    - Анализирует сообщения через GPT-4o
+    - Учитывает контекст и настроение
+    - Генерирует ответ если:
+      1. Бота пингуют (упоминают @bot)
+      2. Это reply на сообщение бота
+      3. Сообщение содержит релевантные ключевые слова (про репозиторий, версию, функции)
+    """
+    try:
+        # Пропускаем сообщения от ботов
+        if message.author.bot:
+            return
+        
+        # Пропускаем DM (личные сообщения)
+        if not message.guild:
+            return
+        
+        # Проверяем, пингуют ли бота
+        is_bot_mentioned = bot.user in message.mentions
+        
+        # Проверяем, это ли reply на сообщение бота
+        is_reply_to_bot = False
+        if message.reference:
+            try:
+                replied_message = await message.channel.fetch_message(message.reference.message_id)
+                is_reply_to_bot = replied_message.author.id == bot.user.id
+            except:
+                pass
+        
+        # Проверяем, содержит ли сообщение релевантные ключевые слова
+        is_relevant = is_message_relevant(message.content)
+        
+        # Если ни пингуют, ни reply на бота, ни релевантное сообщение - пропускаем
+        if not is_bot_mentioned and not is_reply_to_bot and not is_relevant:
+            await bot.process_commands(message)
+            return
+        
+        print(f"📨 Получено сообщение от {message.author}: '{message.content[:50]}...'")
+        
+        # Анализируем и генерируем ответ
+        response = await MessageAnalyzer.analyze_and_respond(message)
+        
+        if response:
+            # Добавляем небольшую задержку, чтобы выглядело естественнее
+            await message.channel.typing()
+            await asyncio.sleep(0.5)
+            
+            # Отправляем ответ
+            try:
+                await message.reply(response, mention_author=False)
+                print(f"✅ Ответ отправлен на сообщение от {message.author}")
+            except discord.Forbidden:
+                print(f"❌ Нет прав для отправки сообщений в канал {message.channel}")
+            except Exception as e:
+                print(f"❌ Ошибка при отправке ответа: {e}")
+        else:
+            print(f"⚠️ Не удалось сгенерировать ответ для сообщения от {message.author}")
+    
+    except Exception as e:
+        print(f"❌ Ошибка в обработчике on_message: {e}")
+    
+    # Важно: обрабатываем команды бота (не забываем вызвать process_commands)
+    await bot.process_commands(message)
+
+
+# ==========================================
+# 4. СЛЭШ-КОМАНДА /PANEL С ПРОВЕРКОЙ РОЛИ
+# ==========================================
+@bot.tree.command(name="ping", description="Проверить, работает ли бот")
+async def ping(interaction: discord.Interaction):
+    """Простая команда для проверки, что бот работает"""
+    try:
+        await interaction.response.defer(ephemeral=True)
+        
+        # Проверяем статус OpenAI
+        openai_status = "✅ Работает" if openai_client else "❌ Отключен"
+        
+        # Проверяем статус GitHub
+        github_status = "✅ Работает" if github_monitor.is_connected() else "⚠️ Отключен"
+        
+        embed = discord.Embed(
+            title="🟢 Бот работает!",
+            description=f"Пинг: {round(bot.latency * 1000)}ms",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="OpenAI API", value=openai_status, inline=False)
+        embed.add_field(name="GitHub Монитор", value=github_status, inline=False)
+        embed.set_footer(text="Все системы функционируют нормально")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        print(f"✅ Команда /ping выполнена для {interaction.user}")
+        
+    except Exception as e:
+        print(f"❌ Ошибка в команде /ping: {e}")
+        await interaction.followup.send("❌ Ошибка при выполнении команды", ephemeral=True)
+
+
+# ==========================================
+# 5. СЛЭШ-КОМАНДА /PANEL С ПРОВЕРКОЙ РОЛИ
+# ==========================================
 async def panel(interaction: discord.Interaction):
     try:
         # Даем боту время на обработку — ПЕРВАЯ операция!
@@ -122,7 +230,7 @@ async def panel(interaction: discord.Interaction):
 
 
 # ==========================================
-# ЗАПУСК БОТА
+# 6. ЗАПУСК БОТА
 # ==========================================
 if not TOKEN:
     raise RuntimeError(

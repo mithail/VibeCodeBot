@@ -75,3 +75,13 @@ TOKEN = os.environ.get("DISCORD_TOKEN")
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB = os.environ.get("MONGO_DB", "discord_bot")
 MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION", "user_limits")
+
+# ===========================
+# OpenAI & GitHub Настройки
+# ===========================
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "ss14-art/ss14-core")
+
+# Максимальная история сообщений для контекста AI
+MAX_MESSAGES_HISTORY = 20
